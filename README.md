@@ -431,18 +431,68 @@ RHCOS_AMI="ami-0xxxxxxxxxxxxx"
 
 ```
 terraform/
-├── main.tf                 # Main configuration
-├── variables.tf            # Variable definitions
-├── outputs.tf              # Output definitions
-└── modules/
-    ├── vpc/                # VPC, subnets, routing
-    ├── iam/                # IAM roles and policies
-    ├── security/           # Security groups
-    ├── load_balancer/      # Network load balancers
-    ├── route53/            # DNS configuration
-    ├── bootstrap/          # Bootstrap node
-    ├── control_plane/      # Master nodes
-    └── workers/            # Worker nodes
+  main.tf            # Wires modules together (VPC, IAM, SGs, LBs, Route53, nodes)
+  variables.tf       # All inputs (CIDRs, AZs, AMIs, ignition b64, sizes, etc.)
+  outputs.tf         # Handy outputs (API FQDN, private zone id, master IPs)
+  modules/
+    vpc/             # VPC, public/private subnets, IGW
+    iam/             # Minimal EC2 instance roles + instance profiles
+    security/        # Single cluster SG (intra-allow), API/SSH/NodePort CIDR rules
+    load_balancer/   # External/Internal NLBs, TGs 6443/22623, public+private DNS
+    route53/         # Placeholder for extra internal records (e.g., *.apps)
+    bootstrap/       # One RHCOS instance (user_data_base64 = ignition)
+    control_plane/   # 3 masters (configurable)
+    workers/         # N workers (configurable)
+```
+### How to use it 
+```
+aws_region          = "us-east-1"
+cluster_name        = "myocp"
+infrastructure_name = "myocp-xyz12"
+
+vpc_cidr            = "10.0.0.0/16"
+azs                 = ["us-east-1a","us-east-1b","us-east-1c"]
+public_subnet_cidrs = ["10.0.0.0/20","10.0.16.0/20","10.0.32.0/20"]
+private_subnet_cidrs= ["10.0.128.0/20","10.0.144.0/20","10.0.160.0/20"]
+
+hosted_zone_id      = "Zxxxxxxxxxxxxx"     # public base-zone ID
+hosted_zone_name    = "example.com"        # base domain (no trailing dot)
+
+api_cidr_allow      = ["0.0.0.0/0"]        # tighten as needed
+ssh_cidr_allow      = ["x.x.x.x/32"]       # your jump host
+nodeport_cidr       = []                   # optional
+
+ssh_key_name        = "my-keypair"
+rhcos_ami_id        = "ami-xxxxxxxx"       # RHCOS AMI for your region
+
+bootstrap_instance_type = "m6i.large"
+master_instance_type    = "m6i.xlarge"
+worker_instance_type    = "m6i.xlarge"
+
+master_count = 3
+worker_count = 3
+
+# paste base64-encoded Ignition payloads
+bootstrap_ignition_b64 = "eyJpZ25pdGlvbiI6IC4uLn0=" 
+master_ignition_b64    = "eyJpZ25pdGlvbiI6IC4uLn0=" 
+worker_ignition_b64    = "eyJpZ25pdGlvbiI6IC4uLn0=" 
+
+tags = { Environment = "dev", Owner = "platform" }
+```
+```
+cd terraform
+terraform init
+terraform apply -auto-approve
+```
+### Notes
+```
+Notes
+	•	The load_balancer module creates:
+	•	External NLB and public api.<cluster>.<base> ALIAS.
+	•	Internal NLB and private zone <cluster>.<base> with api and api-int ALIAS.
+	•	Target groups for 6443 (API) and 22623 (MCS) with health checks /readyz and /healthz.
+	•	The root module automatically wires the NLB target IPs to bootstrap + masters during bring-up. After you destroy bootstrap, just re-apply with api_ip_targets/service_ip_targets effectively updated (the module already computes from outputs).
+	•	Ignition: provide base64 strings for each role (you can generate from your install-openshift-upi.sh flow that produced bootstrap.ign, master.ign, worker.ign).
 ```
 
 ## Troubleshooting
