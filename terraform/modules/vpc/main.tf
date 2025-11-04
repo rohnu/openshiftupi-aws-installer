@@ -44,7 +44,39 @@ resource "aws_route_table_association" "public_assoc" {
   route_table_id = aws_route_table.public.id
 }
 
-# Private subnets and NAT (optional simplified: no NAT here to keep minimal)
+# NAT Gateway for private subnets (REQUIRED for internet access)
+resource "aws_eip" "nat" {
+  domain = "vpc"
+  tags   = merge(var.tags, { Name = "${var.name}-nat-eip" })
+}
+
+resource "aws_nat_gateway" "nat" {
+  allocation_id = aws_eip.nat.id
+  subnet_id     = aws_subnet.public[0].id
+  
+  tags = merge(var.tags, { Name = "${var.name}-nat-gw" })
+  
+  depends_on = [aws_internet_gateway.igw]
+}
+
+# Private route table with NAT
+resource "aws_route_table" "private" {
+  vpc_id = aws_vpc.this.id
+  tags   = merge(var.tags, { Name = "${var.name}-private-rt" })
+}
+
+resource "aws_route" "private_nat" {
+  route_table_id         = aws_route_table.private.id
+  destination_cidr_block = "0.0.0.0/0"
+  nat_gateway_id         = aws_nat_gateway.nat.id
+}
+
+resource "aws_route_table_association" "private_assoc" {
+  for_each       = aws_subnet.private
+  subnet_id      = each.value.id
+  route_table_id = aws_route_table.private.id
+}
+
 resource "aws_subnet" "private" {
   for_each            = { for i, cidr in var.private_subnet_cidrs : i => cidr }
   vpc_id              = aws_vpc.this.id
