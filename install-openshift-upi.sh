@@ -43,7 +43,6 @@ else
     exit 1
 fi
 
-# Required variables check
 required_vars=(
     "CLUSTER_NAME"
     "BASE_DOMAIN"
@@ -51,15 +50,43 @@ required_vars=(
     "RHCOS_AMI"
     "PULL_SECRET_FILE"
     "SSH_KEY_PATH"
+    "SSH_KEY_NAME"
     "VPC_CIDR"
+    "ROUTE53_ZONE_ID"
+    "AVAILABILITY_ZONES"
 )
 
 for var in "${required_vars[@]}"; do
     if [[ -z "${!var:-}" ]]; then
-        log_error "Required variable $var is not set!"
+        log_error "Required variable $var is not set in $CONFIG_FILE!"
         exit 1
     fi
 done
+
+# Validate pull secret is valid JSON
+if ! jq empty "$PULL_SECRET_FILE" 2>/dev/null; then
+    log_error "Pull secret file is not valid JSON: $PULL_SECRET_FILE"
+    exit 1
+fi
+
+# Validate SSH key files exist
+if [[ ! -f "${SSH_KEY_PATH}" ]]; then
+    log_error "SSH private key not found: ${SSH_KEY_PATH}"
+    exit 1
+fi
+
+if [[ ! -f "${SSH_KEY_PATH}.pub" ]]; then
+    log_error "SSH public key not found: ${SSH_KEY_PATH}.pub"
+    exit 1
+fi
+
+# Validate AWS credentials
+log_info "Validating AWS credentials..."
+if ! aws sts get-caller-identity &>/dev/null; then
+    log_error "AWS credentials not configured or invalid!"
+    log_error "Run: aws configure"
+    exit 1
+fi
 
 # Set OpenShift version with default
 OPENSHIFT_VERSION="${OPENSHIFT_VERSION:-$DEFAULT_OPENSHIFT_VERSION}"
@@ -73,6 +100,56 @@ AUTH_DIR="$WORK_DIR/auth"
 
 # Create working directories
 mkdir -p "$WORK_DIR" "$IGNITION_DIR" "$AUTH_DIR" "$TERRAFORM_DIR"
+
+###############################################################################
+# Function: Calculate Subnet CIDRs
+###############################################################################
+calculate_subnet_cidrs() {
+    log_info "Calculating subnet CIDRs from VPC CIDR: $VPC_CIDR"
+    
+    # Parse VPC CIDR
+    IFS='/' read -r VPC_IP VPC_PREFIX <<< "$VPC_CIDR"
+    
+    # Calculate subnet size (we'll use /20 for subnets from /16 VPC)
+    SUBNET_PREFIX=20
+    
+    # Convert IP to integer for calculation
+    IFS='.' read -r i1 i2 i3 i4 <<< "$VPC_IP"
+    VPC_INT=$((i1 * 256**3 + i2 * 256**2 + i3 * 256 + i4))
+    
+    # Calculate subnet size
+    SUBNET_SIZE=$((2 ** (32 - SUBNET_PREFIX)))
+    
+    # Generate 3 public subnets (starting from VPC base)
+    PUBLIC_CIDRS=()
+    for i in 0 1 2; do
+        OFFSET=$((i * SUBNET_SIZE))
+        NEW_INT=$((VPC_INT + OFFSET))
+        NEW_IP="$((NEW_INT >> 24 & 255)).$((NEW_INT >> 16 & 255)).$((NEW_INT >> 8 & 255)).$((NEW_INT & 255))"
+        PUBLIC_CIDRS+=("\"${NEW_IP}/${SUBNET_PREFIX}\"")
+    done
+    
+    # Generate 3 private subnets (starting from middle of VPC)
+    PRIVATE_CIDRS=()
+    PRIVATE_START=$((VPC_INT + (2 ** (32 - VPC_PREFIX)) / 2))
+    for i in 0 1 2; do
+        OFFSET=$((i * SUBNET_SIZE))
+        NEW_INT=$((PRIVATE_START + OFFSET))
+        NEW_IP="$((NEW_INT >> 24 & 255)).$((NEW_INT >> 16 & 255)).$((NEW_INT >> 8 & 255)).$((NEW_INT & 255))"
+        PRIVATE_CIDRS+=("\"${NEW_IP}/${SUBNET_PREFIX}\"")
+    done
+    
+    # Create Terraform list format
+    PUBLIC_SUBNET_CIDRS="[$(IFS=,; echo "${PUBLIC_CIDRS[*]}")]"
+    PRIVATE_SUBNET_CIDRS="[$(IFS=,; echo "${PRIVATE_CIDRS[*]}")]"
+    
+    export PUBLIC_SUBNET_CIDRS
+    export PRIVATE_SUBNET_CIDRS
+    
+    log_info "Public subnets: $PUBLIC_SUBNET_CIDRS"
+    log_info "Private subnets: $PRIVATE_SUBNET_CIDRS"
+}
+
 
 ###############################################################################
 # Function: Install Prerequisites
@@ -203,8 +280,6 @@ networking:
 platform:
   aws:
     region: ${AWS_REGION}
-    subnets:
-$(for subnet in ${SUBNET_IDS}; do echo "    - $subnet"; done)
 publish: External
 pullSecret: '$(cat ${PULL_SECRET_FILE})'
 sshKey: '$(cat ${SSH_KEY_PATH}.pub)'
@@ -237,30 +312,44 @@ generate_ignition_configs() {
 }
 
 ###############################################################################
-# Function: Upload Ignition Files to S3
+# Function: Upload Ignition Files to S3 (Optional - for large bootstrap)
 ###############################################################################
 upload_ignition_to_s3() {
-    log_info "Creating S3 bucket for ignition files..."
+    # This function is optional - we now pass ignition configs directly to Terraform
+    # Only needed if bootstrap.ign is larger than 16KB
     
-    S3_BUCKET="${INFRA_NAME}-bootstrap-ignition"
+    local BOOTSTRAP_SIZE=$(wc -c < "$WORK_DIR/bootstrap.ign")
     
-    # Create S3 bucket
-    if aws s3 ls "s3://${S3_BUCKET}" 2>&1 | grep -q 'NoSuchBucket'; then
-        aws s3 mb "s3://${S3_BUCKET}" --region "${AWS_REGION}"
-        log_info "Created S3 bucket: ${S3_BUCKET}"
+    if [[ $BOOTSTRAP_SIZE -gt 16384 ]]; then
+        log_warn "Bootstrap ignition is larger than 16KB ($BOOTSTRAP_SIZE bytes)"
+        log_info "Uploading to S3 for large file support..."
+        
+        S3_BUCKET="${INFRA_NAME}-bootstrap-ignition"
+        
+        # Create S3 bucket
+        if ! aws s3 ls "s3://${S3_BUCKET}" 2>&1 >/dev/null; then
+            aws s3 mb "s3://${S3_BUCKET}" --region "${AWS_REGION}"
+            log_info "Created S3 bucket: ${S3_BUCKET}"
+        else
+            log_info "S3 bucket already exists: ${S3_BUCKET}"
+        fi
+        
+        # Upload bootstrap ignition file
+        aws s3 cp "$WORK_DIR/bootstrap.ign" "s3://${S3_BUCKET}/bootstrap.ign"
+        log_info "Uploaded bootstrap.ign to S3"
+        
+        # Make it publicly readable (required for ignition)
+        aws s3api put-object-acl \
+            --bucket "${S3_BUCKET}" \
+            --key "bootstrap.ign" \
+            --acl public-read
+        
+        log_info "Set public read access on bootstrap.ign"
+        log_warn "NOTE: You'll need to modify Terraform to use S3 URL instead of direct ignition"
     else
-        log_info "S3 bucket already exists: ${S3_BUCKET}"
+        log_info "Bootstrap ignition size is acceptable ($BOOTSTRAP_SIZE bytes)"
+        log_info "Will pass directly to Terraform"
     fi
-    
-    # Upload bootstrap ignition file
-    aws s3 cp "$WORK_DIR/bootstrap.ign" "s3://${S3_BUCKET}/bootstrap.ign"
-    log_info "Uploaded bootstrap.ign to S3"
-    
-    # Get S3 URL
-    BOOTSTRAP_IGN_URL="s3://${S3_BUCKET}/bootstrap.ign"
-    export BOOTSTRAP_IGN_URL
-    
-    log_info "Bootstrap ignition URL: $BOOTSTRAP_IGN_URL"
 }
 
 ###############################################################################
@@ -269,41 +358,119 @@ upload_ignition_to_s3() {
 deploy_terraform_infrastructure() {
     log_info "Deploying AWS infrastructure with Terraform..."
     
-    cd "$TERRAFORM_DIR"
+    # Calculate subnet CIDRs if not provided
+    if [[ -z "${PUBLIC_SUBNET_CIDRS:-}" ]]; then
+        calculate_subnet_cidrs
+    fi
+    
+    # Convert AVAILABILITY_ZONES to proper Terraform format
+    # From: '["us-east-1a", "us-east-1b", "us-east-1c"]'
+    # To: ["us-east-1a", "us-east-1b", "us-east-1c"]
+    TERRAFORM_AZS="${AVAILABILITY_ZONES}"
+    
+    # Convert API_CIDR_ALLOW and SSH_CIDR_ALLOW if set
+    TERRAFORM_API_CIDR="${API_CIDR_ALLOW:-[\"0.0.0.0/0\"]}"
+    TERRAFORM_SSH_CIDR="${SSH_CIDR_ALLOW:-[\"0.0.0.0/0\"]}"
+    
+    cd "$TERRAFORM_DIR" || {
+        log_error "Failed to access Terraform directory: $TERRAFORM_DIR"
+        exit 1
+    }
     
     # Initialize Terraform
-    terraform init
+    log_info "Initializing Terraform..."
+    terraform init || {
+        log_error "Terraform initialization failed!"
+        exit 1
+    }
+    
+    # Encode ignition files to base64
+    log_info "Encoding ignition configurations..."
+    BOOTSTRAP_IGN_B64=$(base64 -w0 < "$WORK_DIR/bootstrap.ign")
+    MASTER_IGN_B64=$(base64 -w0 < "$WORK_DIR/master.ign")
+    WORKER_IGN_B64=$(base64 -w0 < "$WORK_DIR/worker.ign")
     
     # Create terraform.tfvars
+    log_info "Creating terraform.tfvars..."
     cat > terraform.tfvars <<EOF
-cluster_name = "${CLUSTER_NAME}"
-base_domain = "${BASE_DOMAIN}"
-aws_region = "${AWS_REGION}"
-vpc_cidr = "${VPC_CIDR}"
-availability_zones = ${AVAILABILITY_ZONES}
-infra_name = "${INFRA_NAME}"
-rhcos_ami = "${RHCOS_AMI}"
-bootstrap_ign_url = "${BOOTSTRAP_IGN_URL}"
-master_ign = $(cat "$WORK_DIR/master.ign" | jq -c .)
-worker_ign = $(cat "$WORK_DIR/worker.ign" | jq -c .)
-master_count = ${MASTER_COUNT:-3}
-worker_count = ${WORKER_COUNT:-4}
-master_instance_type = "${MASTER_INSTANCE_TYPE:-m4.xlarge}"
-worker_instance_type = "${WORKER_INSTANCE_TYPE:-r5a.4xlarge}"
-ssh_public_key = "$(cat ${SSH_KEY_PATH}.pub)"
+# Cluster Configuration
+cluster_name          = "${CLUSTER_NAME}"
+infrastructure_name   = "${INFRA_NAME}"
+aws_region           = "${AWS_REGION}"
+
+# Network Configuration
+vpc_cidr             = "${VPC_CIDR}"
+azs                  = ${TERRAFORM_AZS}
+public_subnet_cidrs  = ${PUBLIC_SUBNET_CIDRS}
+private_subnet_cidrs = ${PRIVATE_SUBNET_CIDRS}
+
+# DNS Configuration
+hosted_zone_id       = "${ROUTE53_ZONE_ID}"
+hosted_zone_name     = "${BASE_DOMAIN}"
+
+# Security Configuration
+api_cidr_allow       = ${TERRAFORM_API_CIDR}
+ssh_cidr_allow       = ${TERRAFORM_SSH_CIDR}
+nodeport_cidr        = ${TERRAFORM_API_CIDR}
+
+# SSH Configuration
+ssh_key_name         = "${SSH_KEY_NAME}"
+
+# Instance Configuration
+rhcos_ami_id         = "${RHCOS_AMI}"
+bootstrap_instance_type = "${BOOTSTRAP_INSTANCE_TYPE:-m4.xlarge}"
+master_instance_type    = "${MASTER_INSTANCE_TYPE:-m4.xlarge}"
+worker_instance_type    = "${WORKER_INSTANCE_TYPE:-r5a.4xlarge}"
+master_count            = ${MASTER_COUNT:-3}
+worker_count            = ${WORKER_COUNT:-4}
+
+# Ignition Configurations (base64 encoded)
+bootstrap_ignition_b64 = "${BOOTSTRAP_IGN_B64}"
+master_ignition_b64    = "${MASTER_IGN_B64}"
+worker_ignition_b64    = "${WORKER_IGN_B64}"
+
+# Tags
+tags = {
+  Environment = "openshift"
+  Cluster     = "${CLUSTER_NAME}"
+  ManagedBy   = "terraform"
+}
 EOF
     
+    log_info "terraform.tfvars created successfully"
+    
+    # Validate configuration
+    log_info "Validating Terraform configuration..."
+    terraform validate || {
+        log_error "Terraform validation failed!"
+        exit 1
+    }
+    
     # Plan
-    terraform plan -out=tfplan
+    log_info "Planning infrastructure changes..."
+    terraform plan -out=tfplan || {
+        log_error "Terraform plan failed!"
+        exit 1
+    }
     
     # Apply
-    terraform apply tfplan
+    log_info "Applying infrastructure changes..."
+    log_warn "This will create resources in AWS and may incur costs."
+    terraform apply tfplan || {
+        log_error "Terraform apply failed!"
+        exit 1
+    }
     
     log_info "Infrastructure deployed successfully"
     
     # Export outputs
-    export API_ENDPOINT=$(terraform output -raw api_endpoint)
-    export CONSOLE_URL=$(terraform output -raw console_url)
+    log_info "Retrieving Terraform outputs..."
+    export API_ENDPOINT=$(terraform output -raw api_public_fqdn 2>/dev/null || echo "")
+    export CONSOLE_URL="https://console-openshift-console.apps.${CLUSTER_NAME}.${BASE_DOMAIN}"
+    
+    if [[ -n "$API_ENDPOINT" ]]; then
+        log_info "API Endpoint: $API_ENDPOINT"
+    fi
     
     cd - > /dev/null
 }
@@ -352,9 +519,12 @@ destroy_bootstrap() {
     terraform destroy -target=module.bootstrap -auto-approve
     cd - > /dev/null
     
-    # Delete S3 bucket
-    aws s3 rm "s3://${S3_BUCKET}" --recursive
-    aws s3 rb "s3://${S3_BUCKET}"
+   # Delete S3 bucket if it exists
+    if aws s3 ls "s3://${INFRA_NAME}-bootstrap-ignition" 2>/dev/null; then
+        log_info "Cleaning up S3 bucket..."
+        aws s3 rm "s3://${INFRA_NAME}-bootstrap-ignition" --recursive
+        aws s3 rb "s3://${INFRA_NAME}-bootstrap-ignition"
+    fi
     
     log_info "Bootstrap resources destroyed"
 }
@@ -408,8 +578,9 @@ display_cluster_info() {
     log_info "=========================================="
     log_info ""
     log_info "Cluster Name: ${CLUSTER_NAME}"
-    log_info "API Endpoint: ${API_ENDPOINT}"
-    log_info "Console URL: ${CONSOLE_URL}"
+    log_info "Base Domain: ${BASE_DOMAIN}"
+    log_info "API Endpoint: https://api.${CLUSTER_NAME}.${BASE_DOMAIN}:6443"
+    log_info "Console URL: https://console-openshift-console.apps.${CLUSTER_NAME}.${BASE_DOMAIN}"
     log_info ""
     log_info "Credentials:"
     log_info "  Username: kubeadmin"
@@ -441,7 +612,7 @@ main() {
     # Step 3: Generate ignition configs
     generate_ignition_configs
     
-    # Step 4: Upload ignition files to S3
+    # Step 4: Check if S3 upload needed (only for large bootstrap)
     upload_ignition_to_s3
     
     # Step 5: Deploy infrastructure with Terraform
