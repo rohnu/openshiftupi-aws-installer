@@ -240,33 +240,26 @@ backup_etcd() {
     
     export KUBECONFIG="${WORK_DIR}/auth/kubeconfig"
     
-    # Create backup job
-    cat <<EOF | oc create -f -
-apiVersion: v1
-kind: Pod
-metadata:
-  name: etcd-backup
-  namespace: openshift-etcd
-spec:
-  containers:
-  - name: backup
-    image: quay.io/openshift-release-dev/ocp-v4.0-art-dev@sha256:6a2378154881e6f9a4638f41242518d850e19b0d7d9ef74a2be55b87f4625e87
-    command:
-    - /usr/local/bin/cluster-backup.sh
-    - /home/core/backup
-    volumeMounts:
-    - name: backup-dir
-      mountPath: /home/core/backup
-  volumes:
-  - name: backup-dir
-    hostPath:
-      path: /home/core/backup
-      type: DirectoryOrCreate
-  restartPolicy: Never
-  nodeName: $(oc get nodes -l node-role.kubernetes.io/master -o jsonpath='{.items[0].metadata.name}')
-EOF
+    # Get cluster version to use correct image
+    CLUSTER_VERSION=$(oc get clusterversion version -o jsonpath='{.status.desired.version}')
+    log_info "Cluster version: ${CLUSTER_VERSION}"
     
-    log_info "ETCD backup initiated. Check status with: oc logs -n openshift-etcd etcd-backup"
+    # Get a master node
+    MASTER_NODE=$(oc get nodes -l node-role.kubernetes.io/master -o jsonpath='{.items[0].metadata.name}')
+    
+    if [[ -z "$MASTER_NODE" ]]; then
+        log_error "No master node found"
+        return 1
+    fi
+    
+    log_info "Creating backup on master node: ${MASTER_NODE}"
+    
+    # Run backup command directly on master
+    oc debug node/${MASTER_NODE} -- chroot /host /usr/local/bin/cluster-backup.sh /home/core/backup
+    
+    log_info "ETCD backup completed on node ${MASTER_NODE}"
+    log_info "Backup location: /home/core/backup on ${MASTER_NODE}"
+    log_info "To retrieve: oc debug node/${MASTER_NODE} -- chroot /host tar czf - /home/core/backup"
 }
 
 ###############################################################################
