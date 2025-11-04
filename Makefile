@@ -153,10 +153,14 @@ version-ami:  ## Get RHCOS AMI for version and region (use: make version-ami VER
 	@chmod +x openshift-version-helper.sh
 	@./openshift-version-helper.sh ami $(VERSION) $(REGION)
 
-test-aws:  ## Test AWS credentials
+test-aws:  ## Test AWS credentials and permissions
 	@echo "$(GREEN)[INFO]$(NC) Testing AWS credentials..."
 	@aws sts get-caller-identity
-	@echo "$(GREEN)[INFO]$(NC) AWS credentials are valid!"
+	@echo "$(GREEN)[INFO]$(NC) Testing EC2 permissions..."
+	@aws ec2 describe-availability-zones --region $(shell grep AWS_REGION config.env | cut -d= -f2 | tr -d '"') >/dev/null
+	@echo "$(GREEN)[INFO]$(NC) Testing S3 permissions..."
+	@aws s3 ls >/dev/null
+	@echo "$(GREEN)[INFO]$(NC) AWS credentials and permissions are valid!"
 
 quick-install: check-config prerequisites install  ## Quick install (all steps)
 
