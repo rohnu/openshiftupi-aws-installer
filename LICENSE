@@ -1,6 +1,6 @@
 MIT License
 
-Copyright (c) 2025 Ramprasad Ohnu
+Copyright (c) 2025 OpenShift UPI Automation Contributors
 
 Permission is hereby granted, free of charge, to any person obtaining a copy
 of this software and associated documentation files (the "Software"), to deal
@@ -19,3 +19,47 @@ AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
 LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
 OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 SOFTWARE.
+
+---
+
+THIRD-PARTY NOTICES AND INFORMATION
+
+This software incorporates concepts and references from the following sources:
+
+1. Red Hat OpenShift Documentation
+   Copyright Red Hat, Inc.
+   https://docs.openshift.com/
+   Used under fair use for educational and implementation purposes
+
+2. OpenShift Installer CloudFormation Templates
+   Copyright Red Hat, Inc.
+   https://github.com/openshift/installer
+   Apache License 2.0
+
+3. Based on: "OpenShift Installation Guide for Cloudera Data Services"
+   By: Ramprasad Ohnu (Solutions Architect)
+   Cloudera Professional Services
+   July 2025
+
+TRADEMARK NOTICE
+
+OpenShift® is a registered trademark of Red Hat, Inc.
+Cloudera® is a registered trademark of Cloudera, Inc.
+Amazon Web Services® and AWS® are registered trademarks of Amazon.com, Inc.
+Terraform® is a registered trademark of HashiCorp, Inc.
+
+This software is not affiliated with, endorsed by, or sponsored by Red Hat, Inc.,
+Cloudera, Inc., Amazon.com, Inc., or HashiCorp, Inc.
+
+DISCLAIMER
+
+This automation framework is provided for educational and operational purposes.
+Users are responsible for:
+- Obtaining valid Red Hat subscriptions and licenses
+- Complying with AWS terms of service
+- Ensuring Cloudera licensing compliance
+- Following their organization's security and compliance policies
+- Testing thoroughly before production use
+
+The authors and contributors make no warranties about the suitability of this
+software for any purpose.

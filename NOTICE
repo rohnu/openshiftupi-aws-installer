@@ -1,0 +1,163 @@
+NOTICE
+
+OpenShift UPI Automation Framework
+Copyright (c) 2025
+
+This product includes software developed by the OpenShift UPI Automation Contributors.
+
+================================================================================
+
+THIRD-PARTY SOFTWARE AND REFERENCES
+
+This software builds upon and references work from various sources:
+
+1. Red Hat OpenShift Container Platform
+   - Documentation: https://docs.openshift.com/
+   - Installer: https://github.com/openshift/installer
+   - License: Apache License 2.0
+   - Copyright: Red Hat, Inc.
+
+2. HashiCorp Terraform
+   - Website: https://www.terraform.io/
+   - AWS Provider: https://registry.terraform.io/providers/hashicorp/aws/
+   - License: Mozilla Public License 2.0
+   - Copyright: HashiCorp, Inc.
+
+3. Amazon Web Services (AWS)
+   - Documentation: https://docs.aws.amazon.com/
+   - CloudFormation: AWS service
+   - Terms: https://aws.amazon.com/terms/
+
+4. Original Installation Guide
+   - Title: "Openshift Installation 4.17 for Cloudera Data Services 1.5.5"
+   - Author: Ramprasad Ohnu, Solutions Architect
+   - Organization: Cloudera Professional Services
+   - Date: July 25, 2025
+   - Purpose: Implementation reference and best practices
+
+================================================================================
+
+ATTRIBUTIONS
+
+This automation framework was created by analyzing and automating the manual
+installation procedures documented in the OpenShift installation guide for
+Cloudera Data Services. The implementation follows Red Hat's official
+documentation and uses their provided CloudFormation templates as reference.
+
+Key contributors and sources:
+- Red Hat OpenShift documentation team
+- OpenShift installer project contributors
+- AWS CloudFormation template authors
+- Terraform AWS provider maintainers
+- Cloudera Professional Services documentation
+
+================================================================================
+
+TRADEMARKS
+
+The following are trademarks or registered trademarks of their respective owners:
+
+- OpenShift® - Red Hat, Inc.
+- Red Hat® - Red Hat, Inc.
+- Cloudera® - Cloudera, Inc.
+- Amazon Web Services®, AWS® - Amazon.com, Inc.
+- Terraform® - HashiCorp, Inc.
+- Kubernetes® - The Linux Foundation
+
+This software is not affiliated with, officially maintained by, or endorsed by
+any of the above trademark owners.
+
+================================================================================
+
+OPEN SOURCE LICENSES
+
+This project uses or references the following open source software:
+
+1. OpenShift Installer
+   License: Apache License 2.0
+   Source: https://github.com/openshift/installer
+
+2. Terraform
+   License: Mozilla Public License 2.0
+   Source: https://github.com/hashicorp/terraform
+
+3. Terraform AWS Provider
+   License: Mozilla Public License 2.0
+   Source: https://github.com/hashicorp/terraform-provider-aws
+
+4. jq (JSON processor)
+   License: MIT License
+   Source: https://github.com/stedolan/jq
+
+For complete license texts, see the respective projects.
+
+================================================================================
+
+REQUIRED LICENSES AND SUBSCRIPTIONS
+
+Users of this software must obtain appropriate licenses and subscriptions:
+
+1. RED HAT SUBSCRIPTIONS
+   - Valid Red Hat OpenShift Container Platform subscription
+   - Required for production use
+   - Available at: https://www.redhat.com/en/technologies/cloud-computing/openshift
+
+2. CLOUDERA LICENSES
+   - Valid Cloudera Data Services license (if using Cloudera)
+   - Required for Cloudera workloads
+   - Available at: https://www.cloudera.com/
+
+3. AWS ACCOUNT
+   - Active AWS account
+   - Acceptance of AWS terms of service
+   - Sign up at: https://aws.amazon.com/
+
+================================================================================
+
+SUPPORT AND WARRANTY
+
+This is a community automation framework provided "as-is" without warranty.
+
+For official support, please contact:
+- Red Hat Support: https://access.redhat.com/support
+- Cloudera Support: https://www.cloudera.com/support.html
+- AWS Support: https://aws.amazon.com/support
+
+For issues with this automation framework:
+- Check documentation in README.md
+- Review troubleshooting guides
+- Consult with your DevOps/Platform team
+
+================================================================================
+
+CONTRIBUTIONS
+
+Contributions to this project are welcome and should:
+- Maintain compatibility with Red Hat best practices
+- Follow existing code style and conventions
+- Include appropriate documentation
+- Respect all third-party licenses and trademarks
+
+================================================================================
+
+EXPORT COMPLIANCE
+
+This software may be subject to export control laws. Users are responsible
+for complying with all applicable export laws and regulations.
+
+================================================================================
+
+SECURITY
+
+Users are responsible for:
+- Securing their AWS credentials
+- Managing SSH keys appropriately
+- Following security best practices
+- Keeping software up to date
+- Conducting security reviews before production use
+
+For security issues, follow responsible disclosure practices.
+
+================================================================================
+
+Last Updated: November 2025
