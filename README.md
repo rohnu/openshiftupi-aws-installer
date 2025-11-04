@@ -670,7 +670,6 @@ This project uses these open-source tools (no additional licenses needed):
 
 **Based on**: OpenShift Installation Guide for Cloudera Data Services  
 **Author**: Ramprasad Ohnu (Solutions Architect)  
-**Organization**: Cloudera Professional Services  
 **Date**: July 2025
 
 This automation implements and extends the procedures documented in the official guide.
