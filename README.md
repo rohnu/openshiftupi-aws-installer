@@ -479,11 +479,6 @@ worker_ignition_b64    = "eyJpZ25pdGlvbiI6IC4uLn0="
 
 tags = { Environment = "dev", Owner = "platform" }
 ```
-```
-cd terraform
-terraform init
-terraform apply -auto-approve
-```
 ### Notes
 ```
 Notes
