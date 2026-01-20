@@ -756,3 +756,4 @@ Contributions are welcome! Please submit pull requests or issues to improve this
 ## Authors
 
 Based on the OpenShift Installation Guide for Cloudera Data Services by Ramprasad Ohnu (Solutions Architect).
+[![ko-fi](https://ko-fi.com/img/githubbutton_sm.svg)](https://ko-fi.com/N4N41SN4I3)
